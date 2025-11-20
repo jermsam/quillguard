@@ -25,15 +25,24 @@ export interface GParagraphParams {
   readOnly: boolean;
 }
 export class GParagraph extends Paragraph {
-  private config: ParagraphConfig;
-  private data: ParagraphData;
   private grammarChecker = new GrammarCheckerBuilder().build();
   private mutationObserver: MutationObserver | null = null;
   
   constructor({ data, config, api, readOnly }: GParagraphParams) {
     super({ data, config: config ?? {}, api, readOnly });
-    this.config = config ?? {};
-    this.data = data;
+  }
+
+  /**
+   * Shared grammar checking logic
+   */
+  private async performGrammarCheck(element: HTMLElement): Promise<void> {
+    const currentText = element.textContent || '';
+    if (currentText.trim()) {
+      const suggestions = await this.grammarChecker.checkGrammar(currentText);
+      this.grammarChecker.createOverlays(element, currentText, suggestions);
+    } else {
+      this.grammarChecker.clearOverlays(element);
+    }
   }
 
 
@@ -45,8 +54,7 @@ export class GParagraph extends Paragraph {
    */
   drawView(): HTMLParagraphElement {
     const paragraph = document.createElement("p");
-    const placeholder =
-      this.config.placeholder || Paragraph.DEFAULT_PLACEHOLDER;
+    const placeholder = Paragraph.DEFAULT_PLACEHOLDER;
     
     paragraph.classList.add("ce-paragraph", this.api.styles.block);
     paragraph.contentEditable = "false";
@@ -56,22 +64,7 @@ export class GParagraph extends Paragraph {
       paragraph.contentEditable = "true";
       paragraph.addEventListener("keyup", this.onKeyUp);
       
-      // Grammar checking function
-      const checkGrammar = async () => {
-        const currentText = paragraph.textContent || '';
-        if (currentText.trim()) {
-          const suggestions = await this.grammarChecker.checkGrammar(currentText);
-          // Create overlays in completely separate DOM tree
-          this.grammarChecker.createOverlays(paragraph, currentText, suggestions);
-        } else {
-          this.grammarChecker.clearOverlays(paragraph);
-        }
-      };
-
-      // Grammar checking with completely separate overlay system
-      paragraph.addEventListener("input", checkGrammar);
-      
-      // Use MutationObserver to catch all content changes including paste
+      // Use MutationObserver to catch all content changes (typing, paste, drag & drop)
       this.mutationObserver = new MutationObserver((mutations) => {
         let shouldCheck = false;
         
@@ -82,7 +75,8 @@ export class GParagraph extends Paragraph {
         });
         
         if (shouldCheck) {
-          setTimeout(checkGrammar, 0); // Use setTimeout to ensure DOM is settled
+          // Use setTimeout to ensure DOM is settled before grammar checking
+          setTimeout(() => this.performGrammarCheck(paragraph), 0);
         }
       });
       
@@ -100,7 +94,7 @@ export class GParagraph extends Paragraph {
 
   /**
    * Handle paste events - check grammar after content is pasted
-   * Following Editor.js pattern with requestAnimationFrame
+   * Note: MutationObserver will also catch this, but onPaste provides faster response
    */
   onPaste(event: HTMLPasteEvent): void {
     // Call parent onPaste first
@@ -108,17 +102,9 @@ export class GParagraph extends Paragraph {
     
     // Use requestAnimationFrame to check grammar after paste content is rendered
     window.requestAnimationFrame(() => {
-      // Get the rendered element
       const element = this.render();
       if (element) {
-        const currentText = element.textContent || '';
-        if (currentText.trim()) {
-          this.grammarChecker.checkGrammar(currentText).then(suggestions => {
-            this.grammarChecker.createOverlays(element, currentText, suggestions);
-          });
-        } else {
-          this.grammarChecker.clearOverlays(element);
-        }
+        this.performGrammarCheck(element);
       }
     });
   }
