@@ -27,9 +27,13 @@ export interface GParagraphParams {
 export class GParagraph extends Paragraph {
   private grammarChecker = new GrammarCheckerBuilder().build();
   private mutationObserver: MutationObserver | null = null;
+  private _readOnly: boolean;
+  private _initialData: ParagraphData;
   
   constructor({ data, config, api, readOnly }: GParagraphParams) {
     super({ data, config: config ?? {}, api, readOnly });
+    this._readOnly = readOnly;
+    this._initialData = data;
   }
 
   /**
@@ -60,7 +64,10 @@ export class GParagraph extends Paragraph {
     paragraph.contentEditable = "false";
     paragraph.dataset.placeholderActive = this.api.i18n.t(placeholder);
     
-    if (!this.readOnly) {
+    // Set initial content from data (important for block conversion)
+    paragraph.innerHTML = this._initialData.text || '';
+    
+    if (!this._readOnly) {
       paragraph.contentEditable = "true";
       paragraph.addEventListener("keyup", this.onKeyUp);
       
@@ -89,6 +96,15 @@ export class GParagraph extends Paragraph {
       });
     }
     
+    // Trigger initial grammar checking if there's content (for block conversion)
+    if (!this._readOnly) {
+      requestAnimationFrame(() => {
+        if (paragraph.textContent?.trim()) {
+          this.performGrammarCheck(paragraph);
+        }
+      });
+    }
+    
     return paragraph;
   }
 
@@ -107,6 +123,42 @@ export class GParagraph extends Paragraph {
         this.performGrammarCheck(element);
       }
     });
+  }
+
+
+  /**
+   * Override save method to ensure clean content extraction without grammar overlays
+   */
+  save(toolsContent: HTMLParagraphElement): ParagraphData {
+    // Temporarily clear overlays to get clean content
+    this.grammarChecker.clearOverlays(toolsContent);
+    
+    // Get the clean content using parent's save method
+    const data = super.save(toolsContent);
+    
+    // Restore grammar checking after save
+    setTimeout(() => {
+      if (toolsContent.textContent?.trim()) {
+        this.performGrammarCheck(toolsContent);
+      }
+    }, 0);
+    
+    return data;
+  }
+
+  /**
+   * Lifecycle hook called after block is rendered
+   */
+  rendered(): void {
+    // Trigger grammar checking after block is fully rendered (for conversion)
+    if (!this._readOnly) {
+      setTimeout(() => {
+        const element = this.render();
+        if (element && element.textContent?.trim()) {
+          this.performGrammarCheck(element);
+        }
+      }, 50);
+    }
   }
 
   /**
