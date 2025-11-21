@@ -40,12 +40,13 @@ export class GParagraph extends Paragraph {
    * Shared grammar checking logic
    */
   private async performGrammarCheck(element: HTMLElement): Promise<void> {
+    // Always clear existing overlays first to prevent duplicates
+    this.grammarChecker.clearOverlays(element);
+    
     const currentText = element.textContent || '';
     if (currentText.trim()) {
       const suggestions = await this.grammarChecker.checkGrammar(currentText);
       this.grammarChecker.createOverlays(element, currentText, suggestions);
-    } else {
-      this.grammarChecker.clearOverlays(element);
     }
   }
 

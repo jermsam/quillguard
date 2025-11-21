@@ -44,6 +44,7 @@
   "dependencies": {
     "@editorjs/editorjs": "^2.31.0",
     "@editorjs/header": "^2.8.8",
-    "@editorjs/paragraph": "^2.11.7"
+    "@editorjs/paragraph": "^2.11.7",
+    "@tailwindcss/typography": "^0.5.19"
   }
 }

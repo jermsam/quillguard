@@ -29,12 +29,13 @@ export class GHeader extends Header {
    * Shared grammar checking logic
    */
   private async performGrammarCheck(element: HTMLElement): Promise<void> {
+    // Always clear existing overlays first to prevent duplicates
+    this.grammarChecker.clearOverlays(element);
+    
     const currentText = element.textContent || '';
     if (currentText.trim()) {
       const suggestions = await this.grammarChecker.checkGrammar(currentText);
       this.grammarChecker.createOverlays(element, currentText, suggestions);
-    } else {
-      this.grammarChecker.clearOverlays(element);
     }
   }
 
@@ -106,7 +107,13 @@ export class GHeader extends Header {
    * Override data setter to trigger grammar checking after block conversion
    */
   set data(data: HeaderData) {
-    // Call parent data setter first
+    // Clear any existing overlays before changing header level
+    const currentElement = this.render();
+    if (currentElement) {
+      this.grammarChecker.clearOverlays(currentElement);
+    }
+    
+    // Call parent data setter first (this may replace the DOM element)
     super.data = data;
     
     // Trigger grammar checking after data is set (for block conversion)
