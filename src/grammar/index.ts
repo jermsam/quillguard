@@ -41,7 +41,11 @@ class GrammarChecker {
       const response = await fetch('http://localhost:3000/api/grammar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, dialect: this.config.dialect || 'American' })
+        body: JSON.stringify({ 
+          text, 
+          dialect: this.config.dialect || 'American',
+          use_t5: true  // Enable T5 grammar corrections
+        })
       });
 
       if (!response.ok) {

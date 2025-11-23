@@ -1,10 +1,16 @@
-# Qwik City App ⚡️
+# Grammar Editor Beta 🚀✨
 
-- [Qwik Docs](https://qwik.dev/)
-- [Discord](https://qwik.dev/chat)
-- [Qwik GitHub](https://github.com/QwikDev/qwik)
-- [@QwikDev](https://twitter.com/QwikDev)
-- [Vite](https://vitejs.dev/)
+**Advanced AI-Powered Grammar Correction Editor**
+
+A next-generation writing assistant built with Qwik and powered by T5 transformer models for intelligent grammar correction.
+
+## 🎯 Beta Features
+
+- **🤖 T5 AI Grammar Correction**: Advanced neural network-based grammar checking
+- **⚡ Real-time Highlighting**: Instant visual feedback as you type
+- **🎨 Smart Editor**: Built on Editor.js with custom grammar-aware plugins
+- **🔧 Precise Corrections**: Character-level accuracy for highlighting and suggestions
+- **🌐 Multi-dialect Support**: American, British, and Canadian English
 
 ---
 
@@ -38,15 +44,43 @@ Use the `npm run qwik add` command to add additional integrations. Some examples
 npm run qwik add # or `yarn qwik add`
 ```
 
-## Development
+## 🚀 Quick Start (Beta)
 
-Development mode uses [Vite's development server](https://vitejs.dev/). The `dev` command will server-side render (SSR) the output during development.
+### Prerequisites
+- Node.js 18+ 
+- Rust (for T5 backend)
 
+### 1. Install Dependencies
 ```shell
-npm start # or `yarn start`
+pnpm install
 ```
 
-> Note: during dev mode, Vite may request a significant number of `.js` files. This does not represent a Qwik production build.
+### 2. Start Full Development Environment
+```shell
+pnpm run full-dev
+```
+This starts both the Rust T5 backend (port 3000) and Qwik frontend (port 5173) simultaneously.
+
+### 3. Alternative: Manual Setup
+```shell
+# Terminal 1: Start T5 Grammar Backend
+pnpm run backend
+
+# Terminal 2: Start Frontend
+pnpm run beta
+```
+
+### 4. Open Browser
+Navigate to `http://localhost:5173` and start writing with AI-powered grammar correction!
+
+## 🧪 Beta Testing
+
+- **Real-time Grammar Checking**: Type in the editor and see instant T5-powered corrections
+- **Smart Highlighting**: Click on highlighted errors to see AI suggestions
+- **Multi-error Handling**: T5 can fix multiple grammar issues simultaneously
+- **Natural Corrections**: Advanced sampling produces human-like corrections
+
+> Note: The T5 model downloads automatically on first use (~500MB)
 
 ## Preview
 

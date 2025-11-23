@@ -5,4 +5,4 @@ pub mod t5_native;
 
 pub use state::HarperConfig;
 pub use lint::JSONSuggestion;
-pub use t5_native::T5Corrector;
+pub use t5_native::{T5GrammarCorrector, T5Corrector};

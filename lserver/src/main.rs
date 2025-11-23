@@ -13,7 +13,7 @@ use tokio::sync::Mutex;
 use tower_http::cors::{Any, CorsLayer};
 
 pub mod lang;
-use lang::{HarperConfig, JSONSuggestion, T5Corrector};
+use crate::lang::{HarperConfig, JSONSuggestion, T5Corrector};
 
 // Application state
 #[derive(Debug)]
@@ -24,15 +24,12 @@ struct AppState {
     t5_corrector: T5Corrector,
 }
 
-// Response models
 #[derive(Serialize)]
 struct InfoResponse {
     app_name: String,
     version: String,
     request_count: usize,
 }
-
-// --- Dialect default helper ------------------------------------
 
 fn default_dialect() -> Dialect {
     Dialect::American
@@ -70,17 +67,11 @@ async fn main() {
         t5_corrector,
     });
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
-
     let app = Router::new()
-        .route("/", get(root))
         .route("/api/info", get(info))
         .route("/api/grammar", post(check_grammar))
         .with_state(state)
-        .layer(cors);
+        .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     tracing::info!("Listening on http://{}", addr);
@@ -90,21 +81,16 @@ async fn main() {
 }
 
 // Route handlers
-async fn root() -> &'static str {
-    "Hello, Language Server with FerrisUp & Axum!"
-}
 
 async fn info(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let mut count = state.request_count.lock().await;
     *count += 1;
 
-    let response = InfoResponse {
+    Json(InfoResponse {
         app_name: state.app_name.clone(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         request_count: *count,
-    };
-
-    Json(response)
+    })
 }
 
 async fn check_grammar(
@@ -114,28 +100,15 @@ async fn check_grammar(
     let mut count = state.request_count.lock().await;
     *count += 1;
 
-    // Run Harper + optionally T5 for comprehensive grammar checking
     let suggestions = if request.use_t5 {
-        // Use integrated approach with T5 corrections as suggestions
-        JSONSuggestion::new_with_t5(
-            &state.harper, 
-            &request.text, 
-            request.dialect,
-            Some(&state.t5_corrector)
-        ).await
+        JSONSuggestion::new_with_t5(&state.harper, &request.text, request.dialect, Some(&state.t5_corrector)).await
     } else {
-        // Use Harper only
         JSONSuggestion::new(&state.harper, &request.text, request.dialect)
     };
 
-
-    let response = GrammarResponse {
+    (StatusCode::OK, Json(GrammarResponse {
         dialect: request.dialect,
         suggestion_count: suggestions.len(),
         suggestions,
-    };
-
-    (StatusCode::OK, Json(response))
+    }))
 }
-
-
