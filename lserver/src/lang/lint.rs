@@ -95,7 +95,7 @@ impl JSONSuggestion {
         state: &HarperConfig, 
         text: &str, 
         dialect: Dialect,
-        t5_corrector: Option<&crate::lang::T5Corrector>
+        t5_corrector: Option<&crate::lang::Corrector>
     ) -> Vec<Self> {
         let mut suggestions = Self::new(state, text, dialect);
 

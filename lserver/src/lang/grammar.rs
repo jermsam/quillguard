@@ -1,4 +1,4 @@
-// lang/t5_native.rs - Simplified ONNX Runtime T5 implementation
+// lang/grammar.rs - T5 ONNX grammar correction
 use anyhow::{Error as E, Result};
 use ort::session::{builder::GraphOptimizationLevel, Session};
 use ort::value::Tensor;
@@ -6,13 +6,13 @@ use std::sync::RwLock;
 use tokenizers::Tokenizer;
 use tracing::info;
 
-pub struct T5GrammarCorrector {
+pub struct GrammarCorrector {
     encoder_session: RwLock<Session>,
     decoder_session: RwLock<Session>,
     tokenizer: Tokenizer,
 }
 
-impl T5GrammarCorrector {
+impl GrammarCorrector {
     pub async fn new() -> Result<Self> {
         let model_dir = std::path::Path::new("../gramformer_onnx");
         let tokenizer = Tokenizer::from_file(model_dir.join("tokenizer.json"))
@@ -83,38 +83,38 @@ impl T5GrammarCorrector {
     }
 }
 
-pub enum T5Corrector {
-    Loaded(T5GrammarCorrector),
+pub enum Corrector {
+    Loaded(GrammarCorrector),
     Failed,
 }
 
-impl T5Corrector {
+impl Corrector {
     pub async fn new() -> Self {
-        match T5GrammarCorrector::new().await {
+        match GrammarCorrector::new().await {
             Ok(corrector) => {
                 info!("Successfully loaded ONNX T5 model");
-                T5Corrector::Loaded(corrector)
+                Corrector::Loaded(corrector)
             }
             Err(e) => {
                 info!("Failed to load ONNX T5 model: {}. T5 corrections will be disabled.", e);
-                T5Corrector::Failed
+                Corrector::Failed
             }
         }
     }
 
     pub async fn correct_grammar(&self, text: &str) -> Result<(String, bool)> {
         match self {
-            T5Corrector::Loaded(corrector) => corrector.correct_grammar(text).await,
-            T5Corrector::Failed => Ok((text.to_string(), false)),
+            Corrector::Loaded(corrector) => corrector.correct_grammar(text).await,
+            Corrector::Failed => Ok((text.to_string(), false)),
         }
     }
 }
 
-impl std::fmt::Debug for T5Corrector {
+impl std::fmt::Debug for Corrector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            T5Corrector::Loaded(_) => write!(f, "T5Corrector::Loaded"),
-            T5Corrector::Failed => write!(f, "T5Corrector::Failed"),
+            Corrector::Loaded(_) => write!(f, "Corrector::Loaded"),
+            Corrector::Failed => write!(f, "Corrector::Failed"),
         }
     }
 }

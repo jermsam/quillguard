@@ -13,7 +13,7 @@ use tokio::sync::Mutex;
 use tower_http::cors::{Any, CorsLayer};
 
 pub mod lang;
-use crate::lang::{HarperConfig, JSONSuggestion, T5Corrector};
+use crate::lang::{HarperConfig, JSONSuggestion, Corrector};
 
 // Application state
 #[derive(Debug)]
@@ -21,7 +21,7 @@ struct AppState {
     app_name: String,
     request_count: Mutex<usize>,
     harper: HarperConfig,
-    t5_corrector: T5Corrector,
+    t5_corrector: Corrector,
 }
 
 #[derive(Serialize)]
@@ -58,7 +58,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     // Initialize T5 corrector
-    let t5_corrector = T5Corrector::new().await;
+    let t5_corrector = Corrector::new().await;
 
     let state = Arc::new(AppState {
         app_name: "Language Server".to_string(),
