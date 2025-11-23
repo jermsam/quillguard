@@ -51,7 +51,7 @@ impl GrammarCorrector {
         
         let encoder_hidden_states = &encoder_outputs["last_hidden_state"];
         
-        // Simple greedy decoding
+        // Greedy decoding
         let mut generated_tokens = vec![0i64]; // start token
         let mut decoder_session = self.decoder_session.write().unwrap();
         
@@ -76,11 +76,85 @@ impl GrammarCorrector {
             generated_tokens.push(next_token);
         }
         
-        let result = self.tokenizer.decode(&generated_tokens[1..].iter().map(|&x| x as u32).collect::<Vec<_>>(), true)
+        let best_tokens = generated_tokens;
+        
+        let raw_result = self.tokenizer.decode(&best_tokens[1..].iter().map(|&x| x as u32).collect::<Vec<_>>(), true)
             .map_err(|e| E::msg(format!("Decode failed: {}", e)))?;
+        
+        // Remove the "grammar: " prefix from the result if present
+        let mut result = if raw_result.starts_with("grammar: ") {
+            raw_result[9..].to_string()
+        } else {
+            raw_result
+        };
+        
+        // Remove repetitive text that T5 sometimes generates
+        result = self.remove_repetitions(&result);
+        
         let changed = result.trim() != text.trim();
         Ok((result, changed))
     }
+
+    fn remove_repetitions(&self, text: &str) -> String {
+        let mut words: Vec<String> = text.split_whitespace().map(|s| s.to_string()).collect();
+        if words.len() < 4 { return text.to_string(); }
+        
+        // Remove punctuation from last word for comparison
+        let mut last_word_clean = words.last().unwrap().clone();
+        let had_punctuation = last_word_clean.ends_with('.') || last_word_clean.ends_with('!') || last_word_clean.ends_with('?');
+        if had_punctuation {
+            last_word_clean = last_word_clean.trim_end_matches(['.', '!', '?']).to_string();
+            *words.last_mut().unwrap() = last_word_clean;
+        }
+        
+        // Check for duplicated phrases of various lengths (starting with longer phrases)
+        for phrase_len in (2..=(words.len() / 2)).rev() {
+            if words.len() >= phrase_len * 2 {
+                // Get the last phrase_len words
+                let end_phrase = &words[words.len() - phrase_len..];
+                
+                // Look for this exact phrase earlier in the sentence
+                for start_pos in 0..=(words.len() - phrase_len * 2) {
+                    let candidate_phrase = &words[start_pos..start_pos + phrase_len];
+                    
+                    if candidate_phrase == end_phrase {
+                        // Found exact duplication - remove the end phrase
+                        words.truncate(words.len() - phrase_len);
+                        
+                        // Clean up any trailing conjunctions
+                        while let Some(last_word) = words.last() {
+                            if last_word == "and" || last_word == "or" || last_word == "but" {
+                                words.pop();
+                            } else {
+                                break;
+                            }
+                        }
+                        
+                        // Add punctuation back if needed
+                        if let Some(last_word) = words.last_mut() {
+                            if !last_word.ends_with('.') && !last_word.ends_with('!') && !last_word.ends_with('?') {
+                                last_word.push('.');
+                            }
+                        }
+                        
+                        return words.join(" ");
+                    }
+                }
+            }
+        }
+        
+        // Restore punctuation if no deduplication was done
+        if had_punctuation {
+            if let Some(last_word) = words.last_mut() {
+                if !last_word.ends_with('.') && !last_word.ends_with('!') && !last_word.ends_with('?') {
+                    last_word.push('.');
+                }
+            }
+        }
+        
+        words.join(" ")
+    }
+
 }
 
 pub enum Corrector {
