@@ -13,7 +13,7 @@ use tokio::sync::Mutex;
 use tower_http::cors::{Any, CorsLayer};
 
 pub mod lang;
-use lang::{HarperConfig, JSONSuggestion};
+use lang::{HarperConfig, JSONSuggestion, T5Corrector};
 
 // Application state
 #[derive(Debug)]
@@ -21,6 +21,7 @@ struct AppState {
     app_name: String,
     request_count: Mutex<usize>,
     harper: HarperConfig,
+    t5_corrector: T5Corrector,
 }
 
 // Response models
@@ -43,6 +44,9 @@ struct GrammarRequest {
     // If client omits `dialect`, this will default to American.
     #[serde(default = "default_dialect")]
     dialect: Dialect,
+    // Optional flag to enable T5 contextual correction
+    #[serde(default)]
+    use_t5: bool,
 }
 
 #[derive(Serialize)]
@@ -56,10 +60,14 @@ struct GrammarResponse {
 async fn main() {
     tracing_subscriber::fmt::init();
 
+    // Initialize T5 corrector
+    let t5_corrector = T5Corrector::new().await;
+
     let state = Arc::new(AppState {
         app_name: "Language Server".to_string(),
         request_count: Mutex::new(0),
         harper: HarperConfig::new(),
+        t5_corrector,
     });
 
     let cors = CorsLayer::new()
@@ -106,7 +114,20 @@ async fn check_grammar(
     let mut count = state.request_count.lock().await;
     *count += 1;
 
-    let suggestions = JSONSuggestion::new(&state.harper, &request.text, request.dialect);
+    // Run Harper + optionally T5 for comprehensive grammar checking
+    let suggestions = if request.use_t5 {
+        // Use integrated approach with T5 corrections as suggestions
+        JSONSuggestion::new_with_t5(
+            &state.harper, 
+            &request.text, 
+            request.dialect,
+            Some(&state.t5_corrector)
+        ).await
+    } else {
+        // Use Harper only
+        JSONSuggestion::new(&state.harper, &request.text, request.dialect)
+    };
+
 
     let response = GrammarResponse {
         dialect: request.dialect,
@@ -116,4 +137,5 @@ async fn check_grammar(
 
     (StatusCode::OK, Json(response))
 }
+
 
