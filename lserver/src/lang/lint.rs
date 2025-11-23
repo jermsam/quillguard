@@ -157,20 +157,117 @@ impl JSONSuggestion {
         dialect: Dialect,
         t5_corrector: Option<&crate::lang::Corrector>
     ) -> Vec<Self> {
-        let mut suggestions = Self::new(state, text, dialect);
+        let suggestions = Self::new(state, text, dialect);
 
         if let Some(corrector) = t5_corrector {
+            // Always get T5's opinion on the text
             if let Ok((corrected, _)) = corrector.correct_grammar(text).await {
                 let mut t5_suggestions = Self::from_t5_correction(text, &corrected);
                 
-                // Check if Harper found readability issues with empty replacements
+                // INTELLIGENT PIPELINE: Apply ALL Harper suggestions, then let T5 review the result
+                // This creates a "Harper-corrected → T5-enhanced" pipeline while preserving highlighting
+                
+                let harper_suggestions_with_content: Vec<_> = suggestions.iter()
+                    .filter(|s| !s.replacements.is_empty())
+                    .collect();
+                
+                let mut enhanced_suggestions = Vec::new();
+                
+                if !harper_suggestions_with_content.is_empty() {
+                    // Step 1: Apply ALL Harper suggestions to create fully corrected text
+                    let mut fully_corrected_text = text.to_string();
+                    let mut offset_adjustments = 0i32;
+                    
+                    // Sort suggestions by offset to apply them in order
+                    let mut sorted_suggestions = harper_suggestions_with_content.clone();
+                    sorted_suggestions.sort_by_key(|s| s.offset);
+                    
+                    for harper_suggestion in &sorted_suggestions {
+                        if let Some(first_replacement) = harper_suggestion.replacements.first() {
+                            let adjusted_offset = (harper_suggestion.offset as i32 + offset_adjustments) as usize;
+                            let end_pos = adjusted_offset + harper_suggestion.length;
+                            
+                            if end_pos <= fully_corrected_text.len() {
+                                fully_corrected_text.replace_range(
+                                    adjusted_offset..end_pos,
+                                    first_replacement
+                                );
+                                
+                                // Track offset changes for subsequent replacements
+                                offset_adjustments += first_replacement.len() as i32 - harper_suggestion.length as i32;
+                            }
+                        }
+                    }
+                    
+                    // Step 2: Let T5 (Gramformer) review the fully Harper-corrected text
+                    if let Ok((gramformer_result, _)) = corrector.correct_grammar(&fully_corrected_text).await {
+                        let gramformer_enhanced = gramformer_result.trim() != fully_corrected_text.trim();
+                        let gramformer_text = if gramformer_enhanced {
+                            gramformer_result.trim().to_string()
+                        } else {
+                            fully_corrected_text.clone()
+                        };
+                        
+                        // Step 3: FLAN-T5 reviews Gramformer's result
+                        let flan_t5_text = if let Ok((flan_result, flan_changed)) = corrector.correct_grammar_with_flan_t5(&gramformer_text).await {
+                            if flan_changed {
+                                flan_result
+                            } else {
+                                gramformer_text.clone()
+                            }
+                        } else {
+                            gramformer_text.clone() // Fallback if FLAN-T5 fails
+                        };
+                        
+                        // Create three-stage collaborative suggestion - ALWAYS show all three stages
+                        let replacements = vec![
+                            fully_corrected_text.clone(),  // Stage 1: Harper corrections
+                            gramformer_text.clone(),       // Stage 2: Gramformer enhancements  
+                            flan_t5_text,                  // Stage 3: FLAN-T5 (placeholder)
+                        ];
+                        
+                        // Always create three-stage suggestion to show the full pipeline
+                        if replacements.len() >= 2 { // At least Harper + one enhancement
+                            enhanced_suggestions.push(Self {
+                                kind: "three_stage".to_string(),
+                                message: "Three-stage enhancement (Harper → Gramformer → FLAN-T5)".to_string(),
+                                offset: 0,
+                                length: text.len(),
+                                replacements,
+                            });
+                            
+                            // Also keep individual Harper suggestions for precise highlighting
+                            for harper_suggestion in &suggestions {
+                                if !harper_suggestion.replacements.is_empty() {
+                                    enhanced_suggestions.push(harper_suggestion.clone());
+                                }
+                            }
+                        } else {
+                            // T5 approved Harper's corrections - keep Harper's individual suggestions
+                            for harper_suggestion in &suggestions {
+                                if !harper_suggestion.replacements.is_empty() {
+                                    enhanced_suggestions.push(harper_suggestion.clone());
+                                }
+                            }
+                        }
+                    } else {
+                        // T5 failed - keep Harper's suggestions
+                        for harper_suggestion in &suggestions {
+                            if !harper_suggestion.replacements.is_empty() {
+                                enhanced_suggestions.push(harper_suggestion.clone());
+                            }
+                        }
+                    }
+                } else {
+                    // No Harper suggestions with content - keep originals
+                    enhanced_suggestions = suggestions.clone();
+                }
+                
+                // Handle readability issues with intelligent splitting
                 let has_empty_readability = suggestions.iter()
                     .any(|s| s.kind == "readability" && s.replacements.is_empty());
                 
-                // If Harper found readability issues, always try to provide T5 rephrase
-                // even if T5 made minimal changes or no changes
                 if has_empty_readability && t5_suggestions.is_empty() {
-                    // If T5 made any changes, use them as a rephrase
                     if corrected.trim() != text.trim() {
                         t5_suggestions.push(Self {
                             kind: "rephrase".to_string(),
@@ -180,11 +277,9 @@ impl JSONSuggestion {
                             replacements: vec![corrected.trim().to_string()],
                         });
                     } else {
-                        // If T5 made no changes, provide a generic rephrase suggestion
-                        // encouraging the user to break up the long sentence
+                        // Intelligent sentence splitting for long sentences
                         let words: Vec<&str> = text.split_whitespace().collect();
                         if words.len() > 30 {
-                            // Try to split at a natural break point (comma, "and", "but", etc.)
                             let mut split_point = words.len() / 2;
                             for (i, word) in words.iter().enumerate() {
                                 if i > 10 && i < words.len() - 10 {
@@ -213,13 +308,14 @@ impl JSONSuggestion {
                     }
                 }
                 
-                // If T5 provides suggestions, remove Harper suggestions with empty replacements
-                // This allows Gramformer to take over when Harper can't provide actionable fixes
-                if !t5_suggestions.is_empty() {
-                    suggestions.retain(|s| !s.replacements.is_empty());
-                }
+                // Combine enhanced Harper suggestions with T5 suggestions
+                enhanced_suggestions.append(&mut t5_suggestions);
                 
-                suggestions.append(&mut t5_suggestions);
+                // Filter out empty suggestions if we have enhanced ones
+                if !enhanced_suggestions.is_empty() {
+                    enhanced_suggestions.retain(|s| !s.replacements.is_empty());
+                    return enhanced_suggestions;
+                }
             }
         }
 

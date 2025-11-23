@@ -12,6 +12,156 @@ pub struct GrammarCorrector {
     tokenizer: Tokenizer,
 }
 
+pub struct FlanT5Corrector {
+    session: RwLock<Session>,
+    tokenizer: Tokenizer,
+}
+
+impl FlanT5Corrector {
+    pub async fn new() -> Result<Self> {
+        let model_dir = std::path::Path::new("../flan_t5_onnx");
+        
+        // Check if files exist locally first
+        let tokenizer_file = model_dir.join("tokenizer.json");
+        let model_file = model_dir.join("onnx/model.onnx");
+        
+        let tokenizer = if tokenizer_file.exists() {
+            info!("Loading FLAN-T5 tokenizer from local cache...");
+            Tokenizer::from_file(&tokenizer_file)
+                .map_err(|e| E::msg(format!("Failed to load FLAN-T5 tokenizer: {}", e)))?
+        } else {
+            info!("Downloading FLAN-T5 tokenizer from Hugging Face to ../flan_t5_onnx/...");
+            let api = hf_hub::api::tokio::Api::new()?;
+            let repo = api.model("pszemraj/flan-t5-large-grammar-synthesis".to_string());
+            
+            let tokenizer_path = repo.get("tokenizer.json").await
+                .map_err(|e| E::msg(format!("Failed to download tokenizer: {}", e)))?;
+            
+            // Copy to our local directory
+            std::fs::create_dir_all(&model_dir)?;
+            std::fs::copy(&tokenizer_path, &tokenizer_file)?;
+            
+            Tokenizer::from_file(&tokenizer_file)
+                .map_err(|e| E::msg(format!("Failed to load FLAN-T5 tokenizer: {}", e)))?
+        };
+        
+        let session = if model_file.exists() {
+            info!("Loading FLAN-T5 ONNX model from local cache...");
+            Session::builder()?
+                .with_optimization_level(GraphOptimizationLevel::Level3)?
+                .commit_from_file(&model_file)?
+        } else {
+            // Try the alternative GEC model first (more compatible)
+            info!("Trying alternative GEC ONNX model (more compatible)...");
+            let api = hf_hub::api::tokio::Api::new()?;
+            let gec_repo = api.model("onnx-community/grammar_error_correcter_v1-ONNX".to_string());
+            
+            match gec_repo.get("model.onnx").await {
+                Ok(gec_model_path) => {
+                    info!("Using GEC ONNX model instead of FLAN-T5");
+                    std::fs::create_dir_all(model_dir.join("onnx"))?;
+                    std::fs::copy(&gec_model_path, &model_file)?;
+                    
+                    Session::builder()?
+                        .with_optimization_level(GraphOptimizationLevel::Level3)?
+                        .commit_from_file(&model_file)?
+                }
+                Err(_) => {
+                    info!("Downloading FLAN-T5 ONNX model from Hugging Face to ../flan_t5_onnx/...");
+                    let repo = api.model("pszemraj/flan-t5-large-grammar-synthesis".to_string());
+                    
+                    let model_path = repo.get("onnx/model.onnx").await
+                        .map_err(|e| E::msg(format!("Failed to download ONNX model: {}", e)))?;
+                    
+                    // Copy to our local directory
+                    std::fs::create_dir_all(model_dir.join("onnx"))?;
+                    std::fs::copy(&model_path, &model_file)?;
+                    
+                    Session::builder()?
+                        .with_optimization_level(GraphOptimizationLevel::Level3)?
+                        .commit_from_file(&model_file)?
+                }
+            }
+        };
+
+        info!("FLAN-T5 model loaded successfully!");
+        Ok(Self {
+            session: RwLock::new(session),
+            tokenizer,
+        })
+    }
+
+    pub async fn correct_grammar(&self, text: &str) -> Result<(String, bool)> {
+        info!("FLAN-T5 processing: '{}'", text);
+        
+        let encoding = self.tokenizer.encode(text, true)
+            .map_err(|e| E::msg(format!("FLAN-T5 tokenization failed: {}", e)))?;
+        let input_ids: Vec<i64> = encoding.get_ids().iter().map(|&x| x as i64).collect();
+        
+        if input_ids.len() > 256 { 
+            return Err(E::msg("Input too long for FLAN-T5")); 
+        }
+        
+        // T5 models need decoder_input_ids for generation - start with start token (0)
+        let mut generated_tokens = vec![0i64]; // Start with pad/start token
+        let mut session = self.session.write().unwrap();
+        
+        // Generate tokens iteratively (autoregressive generation)
+        for step in 0..50 { // Max 50 tokens
+            info!("FLAN-T5 generation step {}, current tokens: {:?}", step, generated_tokens);
+            
+            let input_tensor = Tensor::from_array(([1, input_ids.len()], input_ids.clone().into_boxed_slice()))?;
+            let attention_tensor = Tensor::from_array(([1, encoding.len()], vec![1i64; encoding.len()].into_boxed_slice()))?;
+            let decoder_tensor = Tensor::from_array(([1, generated_tokens.len()], generated_tokens.clone().into_boxed_slice()))?;
+            
+            let outputs = session.run(ort::inputs![
+                "input_ids" => input_tensor,
+                "attention_mask" => attention_tensor,
+                "decoder_input_ids" => decoder_tensor
+            ])?;
+            
+            // Get logits and convert to tokens
+            let logits = outputs["logits"].try_extract_array::<f32>()?;
+            let vocab_size = logits.shape()[2];
+            
+            // Get the logits for the last generated position
+            let last_position = generated_tokens.len() - 1;
+            let start_idx = last_position * vocab_size;
+            let end_idx = start_idx + vocab_size;
+            let last_logits: Vec<f32> = logits.as_slice().unwrap()[start_idx..end_idx].to_vec();
+            
+            // Get the most likely next token
+            let next_token = last_logits.iter().enumerate()
+                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                .unwrap().0 as i64;
+            
+            info!("FLAN-T5 predicted next token: {}", next_token);
+            
+            // Stop if we hit EOS token (1) or pad token (0)
+            if next_token == 1 || next_token == 0 {
+                info!("FLAN-T5 stopping generation at EOS/PAD token");
+                break;
+            }
+            
+            generated_tokens.push(next_token);
+        }
+        
+        // Decode the generated tokens (skip the initial start token)
+        let output_tokens: Vec<u32> = generated_tokens.iter().skip(1).map(|&x| x as u32).collect();
+        info!("FLAN-T5 final generated tokens: {:?}", output_tokens);
+        
+        let raw_result = self.tokenizer.decode(&output_tokens, true)
+            .map_err(|e| E::msg(format!("FLAN-T5 decode failed: {}", e)))?;
+        
+        let result = raw_result.trim().to_string();
+        let changed = result != text.trim() && !result.is_empty();
+        
+        info!("FLAN-T5 result: '{}' -> '{}', changed: {}", text, result, changed);
+        Ok((result, changed))
+    }
+}
+
+
 impl GrammarCorrector {
     pub async fn new() -> Result<Self> {
         let model_dir = std::path::Path::new("../gramformer_onnx");
@@ -209,38 +359,62 @@ impl GrammarCorrector {
 
 }
 
-pub enum Corrector {
-    Loaded(GrammarCorrector),
-    Failed,
+pub struct Corrector {
+    pub gramformer: Option<GrammarCorrector>,
+    pub flan_t5: Option<FlanT5Corrector>,
 }
 
 impl Corrector {
     pub async fn new() -> Self {
-        match GrammarCorrector::new().await {
+        let gramformer = match GrammarCorrector::new().await {
             Ok(corrector) => {
-                info!("Successfully loaded ONNX T5 model");
-                Corrector::Loaded(corrector)
+                info!("Successfully loaded Gramformer ONNX model");
+                Some(corrector)
             }
             Err(e) => {
-                info!("Failed to load ONNX T5 model: {}. T5 corrections will be disabled.", e);
-                Corrector::Failed
+                info!("Failed to load Gramformer ONNX model: {}. Gramformer corrections will be disabled.", e);
+                None
             }
-        }
+        };
+
+        let flan_t5 = match FlanT5Corrector::new().await {
+            Ok(corrector) => {
+                info!("Successfully loaded FLAN-T5 ONNX model");
+                Some(corrector)
+            }
+            Err(e) => {
+                info!("Failed to load FLAN-T5 ONNX model: {}. FLAN-T5 corrections will be disabled.", e);
+                None
+            }
+        };
+
+        Self { gramformer, flan_t5 }
     }
 
     pub async fn correct_grammar(&self, text: &str) -> Result<(String, bool)> {
-        match self {
-            Corrector::Loaded(corrector) => corrector.correct_grammar(text).await,
-            Corrector::Failed => Ok((text.to_string(), false)),
+        if let Some(gramformer) = &self.gramformer {
+            gramformer.correct_grammar(text).await
+        } else {
+            Ok((text.to_string(), false))
+        }
+    }
+
+    pub async fn correct_grammar_with_flan_t5(&self, text: &str) -> Result<(String, bool)> {
+        if let Some(flan_t5) = &self.flan_t5 {
+            flan_t5.correct_grammar(text).await
+        } else {
+            Ok((text.to_string(), false))
         }
     }
 }
 
 impl std::fmt::Debug for Corrector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Corrector::Loaded(_) => write!(f, "Corrector::Loaded"),
-            Corrector::Failed => write!(f, "Corrector::Failed"),
+        match (self.gramformer.as_ref(), self.flan_t5.as_ref()) {
+            (Some(_), Some(_)) => write!(f, "Corrector::Loaded(Gramformer, FLAN-T5)"),
+            (Some(_), None) => write!(f, "Corrector::Loaded(Gramformer)"),
+            (None, Some(_)) => write!(f, "Corrector::Loaded(FLAN-T5)"),
+            (None, None) => write!(f, "Corrector::Failed"),
         }
     }
 }

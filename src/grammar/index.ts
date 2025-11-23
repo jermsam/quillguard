@@ -200,6 +200,15 @@ class GrammarChecker {
    */
   private createFixedOverlay(wrapper: HTMLElement, text: string, suggestion: GrammarSuggestion, index: number): HTMLElement | null {
     try {
+      // Smart highlighting: Don't create visual overlays for rephrase/three_stage suggestions
+      // These are too long and visually overwhelming - they only show in popups
+      const isRephraseType = ['rephrase', 'three_stage', 'collaborative'].includes(suggestion.type);
+      
+      if (isRephraseType) {
+        // Create invisible overlay just for click handling, no visual highlighting
+        return this.createInvisibleClickOverlay(wrapper, text, suggestion, index);
+      }
+      
       // Find the actual text node in the contentEditable element
       const textNode = this.getFirstTextNode(wrapper);
       if (!textNode || !textNode.textContent) {
@@ -382,7 +391,13 @@ class GrammarChecker {
       suggestionsTitle.style.marginBottom = '8px';
       suggestionsTitle.style.fontSize = '13px';
       suggestionsTitle.style.color = '#1a1a1a';
-      suggestionsTitle.textContent = 'Suggestions:';
+      
+      // Special handling for three-stage suggestions
+      if (suggestion.type === 'three_stage') {
+        suggestionsTitle.textContent = 'Enhancement Stages:';
+      } else {
+        suggestionsTitle.textContent = 'Suggestions:';
+      }
       popup.appendChild(suggestionsTitle);
       
       const suggestionsContainer = document.createElement('div');
@@ -414,7 +429,16 @@ class GrammarChecker {
         badge.style.backgroundColor = '#e9ecef';
         badge.style.padding = '2px 6px';
         badge.style.borderRadius = '4px';
-        badge.textContent = `${index + 1}`;
+        
+        // Special labels for three-stage suggestions
+        if (suggestion.type === 'three_stage') {
+          const stageLabels = ['Harper', 'Gramformer', 'FLAN-T5'];
+          badge.textContent = stageLabels[index] || `Stage ${index + 1}`;
+          badge.style.backgroundColor = this.getColorForType(suggestion.type);
+          badge.style.color = 'white';
+        } else {
+          badge.textContent = `${index + 1}`;
+        }
         
         suggestionItem.appendChild(replacementText);
         suggestionItem.appendChild(badge);
@@ -572,14 +596,67 @@ class GrammarChecker {
    */
   private getColorForType(type: string): string {
     const colors: Record<string, string> = {
-      spelling: '#e74c3c',     // Red
-      grammar: '#e67e22',      // Orange  
-      style: '#9b59b6',        // Purple
-      punctuation: '#3498db',  // Blue
-      capitalization: '#f1c40f', // Yellow
-      formatting: '#9b59b6',   // Purple
+      spelling: '#e74c3c',        // Red
+      grammar: '#e67e22',         // Orange  
+      style: '#9b59b6',           // Purple
+      punctuation: '#3498db',     // Blue
+      capitalization: '#f1c40f',  // Yellow
+      formatting: '#9b59b6',      // Purple
+      contextual: '#27ae60',      // Green
+      wordchoice: '#8e44ad',      // Dark purple
+      readability: '#f39c12',     // Orange
+      rephrase: '#2980b9',        // Blue
+      enhanced: '#16a085',        // Teal
+      collaborative: '#e67e22',   // Orange
+      three_stage: '#8e44ad',     // Purple (special for three-stage)
     };
     return colors[type] || '#95a5a6'; // Default gray
+  }
+
+  /**
+   * Create invisible overlay for rephrase suggestions (click-only, no visual highlighting)
+   */
+  private createInvisibleClickOverlay(wrapper: HTMLElement, text: string, suggestion: GrammarSuggestion, index: number): HTMLElement | null {
+    // Create a small, invisible click area at the beginning of the text
+    // This allows users to access rephrase suggestions without visual clutter
+    const clickArea = document.createElement('div');
+    clickArea.className = `grammar-click-area grammar-${suggestion.type}`;
+    clickArea.style.position = 'fixed';
+    
+    // Position at the start of the text area
+    const wrapperRect = wrapper.getBoundingClientRect();
+    clickArea.style.left = `${wrapperRect.left}px`;
+    clickArea.style.top = `${wrapperRect.top}px`;
+    clickArea.style.width = '20px'; // Small click area
+    clickArea.style.height = '20px';
+    clickArea.style.backgroundColor = 'transparent';
+    clickArea.style.border = `2px solid ${this.getColorForType(suggestion.type)}`;
+    clickArea.style.borderRadius = '50%';
+    clickArea.style.opacity = '0.7';
+    clickArea.style.pointerEvents = 'auto';
+    clickArea.style.cursor = 'pointer';
+    clickArea.style.zIndex = '1';
+    
+    // Store suggestion data
+    clickArea.dataset.suggestionIndex = String(index);
+    clickArea.dataset.suggestionType = suggestion.type;
+    clickArea.dataset.suggestionOffset = String(suggestion.offset);
+    clickArea.dataset.suggestionLength = String(suggestion.length);
+    
+    // Add click handler
+    const clickHandler = (e: MouseEvent) => {
+      console.log('Grammar rephrase clicked!', suggestion);
+      e.stopPropagation();
+      e.preventDefault();
+      
+      const rect = wrapper.getBoundingClientRect();
+      const problemText = text.slice(suggestion.offset, suggestion.offset + suggestion.length);
+      this.showGrammarPopup(suggestion, rect, problemText);
+    };
+    
+    clickArea.addEventListener('click', clickHandler);
+    
+    return clickArea;
   }
 
   /**
