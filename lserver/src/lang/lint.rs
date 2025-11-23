@@ -162,6 +162,63 @@ impl JSONSuggestion {
         if let Some(corrector) = t5_corrector {
             if let Ok((corrected, _)) = corrector.correct_grammar(text).await {
                 let mut t5_suggestions = Self::from_t5_correction(text, &corrected);
+                
+                // Check if Harper found readability issues with empty replacements
+                let has_empty_readability = suggestions.iter()
+                    .any(|s| s.kind == "readability" && s.replacements.is_empty());
+                
+                // If Harper found readability issues, always try to provide T5 rephrase
+                // even if T5 made minimal changes or no changes
+                if has_empty_readability && t5_suggestions.is_empty() {
+                    // If T5 made any changes, use them as a rephrase
+                    if corrected.trim() != text.trim() {
+                        t5_suggestions.push(Self {
+                            kind: "rephrase".to_string(),
+                            message: "Suggested rephrase for clarity and style".to_string(),
+                            offset: 0,
+                            length: text.len(),
+                            replacements: vec![corrected.trim().to_string()],
+                        });
+                    } else {
+                        // If T5 made no changes, provide a generic rephrase suggestion
+                        // encouraging the user to break up the long sentence
+                        let words: Vec<&str> = text.split_whitespace().collect();
+                        if words.len() > 30 {
+                            // Try to split at a natural break point (comma, "and", "but", etc.)
+                            let mut split_point = words.len() / 2;
+                            for (i, word) in words.iter().enumerate() {
+                                if i > 10 && i < words.len() - 10 {
+                                    if word.ends_with(',') || *word == "and" || *word == "but" || *word == "so" {
+                                        split_point = i + 1;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            let first_part: String = words[..split_point].join(" ");
+                            let second_part: String = words[split_point..].join(" ");
+                            let rephrase = format!("{}. {}", 
+                                first_part.trim_end_matches(','), 
+                                second_part.chars().next().unwrap().to_uppercase().collect::<String>() + &second_part[1..]
+                            );
+                            
+                            t5_suggestions.push(Self {
+                                kind: "rephrase".to_string(),
+                                message: "Suggested rephrase for clarity and style".to_string(),
+                                offset: 0,
+                                length: text.len(),
+                                replacements: vec![rephrase],
+                            });
+                        }
+                    }
+                }
+                
+                // If T5 provides suggestions, remove Harper suggestions with empty replacements
+                // This allows Gramformer to take over when Harper can't provide actionable fixes
+                if !t5_suggestions.is_empty() {
+                    suggestions.retain(|s| !s.replacements.is_empty());
+                }
+                
                 suggestions.append(&mut t5_suggestions);
             }
         }

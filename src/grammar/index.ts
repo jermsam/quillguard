@@ -12,6 +12,7 @@ interface GrammarConfig {
   enableSpellCheck?: boolean;
   enableGrammarCheck?: boolean;
   dialect?: 'American' | 'British' | 'Canadian';
+  debounceDelay?: number; // Delay in milliseconds before checking grammar (default: 500ms)
   customColors?: {
     spelling?: string;
     grammar?: string;
@@ -25,8 +26,11 @@ interface GrammarConfig {
 class GrammarChecker {
   private currentWrapper: HTMLElement | null = null;
   private currentText: string = '';
+  private debounceTimer: number | null = null;
+  private readonly debounceDelay: number;
   
   constructor(private config: GrammarConfig) {
+    this.debounceDelay = config.debounceDelay ?? 300; // Default 300ms delay for better responsiveness
   }
 
   /**
@@ -75,7 +79,55 @@ class GrammarChecker {
   }
 
   /**
-   * Check text and get suggestions from backend
+   * Check text and get suggestions from backend (debounced)
+   */
+  async checkGrammarDebounced(text: string, wrapper: HTMLElement): Promise<void> {
+    console.log(`[DEBUG] checkGrammarDebounced called with text: "${text}"`);
+    
+    // Clear any existing timer
+    if (this.debounceTimer !== null) {
+      clearTimeout(this.debounceTimer);
+      console.log(`[DEBUG] Cleared existing timer`);
+    }
+
+    // Don't clear overlays immediately - keep existing highlights until new ones are ready
+    
+    // Set new timer
+    this.debounceTimer = window.setTimeout(async () => {
+      console.log(`[DEBUG] Debounce timer fired, checking grammar for: "${text}"`);
+      
+      try {
+        const suggestions = await this.fetchGrammarSuggestions(text);
+        
+        // Log detailed information about each suggestion for debugging
+        if (suggestions.length > 0) {
+          console.log(`Found ${suggestions.length} grammar issues:`);
+          suggestions.forEach((suggestion, index) => {
+            const problemText = text.slice(suggestion.offset, suggestion.offset + suggestion.length);
+            console.log(`${index + 1}. "${problemText}" at position ${suggestion.offset}-${suggestion.offset + suggestion.length}`);
+            console.log(`   Type: ${suggestion.type}, Message: ${suggestion.message}`);
+            if (suggestion.replacement && suggestion.replacement.length > 0) {
+              console.log(`   Suggestions: ${suggestion.replacement.join(', ')}`);
+            }
+          });
+        } else {
+          console.log('No grammar issues found');
+        }
+        
+        // Clear old overlays and create new ones
+        this.clearOverlays(wrapper);
+        this.createOverlays(wrapper, text, suggestions);
+        
+      } catch (error) {
+        console.error('Grammar check failed:', error);
+      }
+      
+      this.debounceTimer = null;
+    }, this.debounceDelay);
+  }
+
+  /**
+   * Check text and get suggestions from backend (immediate - for programmatic use)
    */
   async checkGrammar(text: string): Promise<GrammarSuggestion[]> {
     try {
@@ -323,7 +375,7 @@ class GrammarChecker {
     popup.appendChild(message);
     popup.appendChild(problemWord);
     
-    // Add suggestions if available
+    // Add suggestions if available, or helpful advice for readability issues
     if (suggestion.replacement && suggestion.replacement.length > 0) {
       const suggestionsTitle = document.createElement('div');
       suggestionsTitle.style.fontWeight = '600';
@@ -391,6 +443,38 @@ class GrammarChecker {
       });
       
       popup.appendChild(suggestionsContainer);
+    } else if (suggestion.type === 'readability') {
+      // For readability issues, provide helpful advice instead of specific replacements
+      const adviceTitle = document.createElement('div');
+      adviceTitle.style.fontWeight = '600';
+      adviceTitle.style.marginBottom = '8px';
+      adviceTitle.style.fontSize = '13px';
+      adviceTitle.style.color = '#1a1a1a';
+      adviceTitle.textContent = 'Advice:';
+      popup.appendChild(adviceTitle);
+      
+      const adviceContainer = document.createElement('div');
+      adviceContainer.style.padding = '12px';
+      adviceContainer.style.backgroundColor = '#f8f9fa';
+      adviceContainer.style.border = '1px solid #e9ecef';
+      adviceContainer.style.borderRadius = '8px';
+      adviceContainer.style.fontSize = '13px';
+      adviceContainer.style.lineHeight = '1.4';
+      adviceContainer.style.color = '#495057';
+      
+      // Provide specific advice based on the issue
+      if (suggestion.message.includes('words long')) {
+        adviceContainer.innerHTML = `
+          <strong>Consider breaking this into shorter sentences:</strong><br>
+          • Split at natural break points (conjunctions like "and", "but")<br>
+          • Use periods instead of commas for major ideas<br>
+          • Aim for 15-20 words per sentence for better readability
+        `;
+      } else {
+        adviceContainer.textContent = 'Consider revising this text for better clarity and readability.';
+      }
+      
+      popup.appendChild(adviceContainer);
     }
     
     // Add modern close button
@@ -510,6 +594,26 @@ class GrammarChecker {
       }
     }
   }
+
+  /**
+   * Cleanup method - call when destroying the grammar checker instance
+   */
+  destroy(): void {
+    // Clear any pending debounce timer
+    if (this.debounceTimer !== null) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+
+    // Clear overlays if we have a current wrapper
+    if (this.currentWrapper) {
+      this.clearOverlays(this.currentWrapper);
+      this.currentWrapper = null;
+    }
+
+    // Reset state
+    this.currentText = '';
+  }
 }
 
 export class GrammarCheckerBuilder {
@@ -536,6 +640,11 @@ export class GrammarCheckerBuilder {
   
   withCustomColors(colors: GrammarConfig['customColors']): this {
     this.config.customColors = colors;
+    return this;
+  }
+  
+  withDebounceDelay(delay: number): this {
+    this.config.debounceDelay = delay;
     return this;
   }
   

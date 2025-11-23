@@ -37,16 +37,16 @@ export class GParagraph extends Paragraph {
   }
 
   /**
-   * Shared grammar checking logic
+   * Shared grammar checking logic (debounced for better performance)
    */
-  private async performGrammarCheck(element: HTMLElement): Promise<void> {
-    // Always clear existing overlays first to prevent duplicates
-    this.grammarChecker.clearOverlays(element);
-    
+  private performGrammarCheck(element: HTMLElement): void {
     const currentText = element.textContent || '';
     if (currentText.trim()) {
-      const suggestions = await this.grammarChecker.checkGrammar(currentText);
-      this.grammarChecker.createOverlays(element, currentText, suggestions);
+      // Use debounced checking for real-time typing
+      this.grammarChecker.checkGrammarDebounced(currentText, element);
+    } else {
+      // Clear overlays if no text
+      this.grammarChecker.clearOverlays(element);
     }
   }
 
@@ -170,6 +170,9 @@ export class GParagraph extends Paragraph {
       this.mutationObserver.disconnect();
       this.mutationObserver = null;
     }
+    
+    // Clean up grammar checker resources
+    this.grammarChecker.destroy();
   }
 
 }
