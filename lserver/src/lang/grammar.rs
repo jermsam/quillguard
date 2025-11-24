@@ -19,7 +19,7 @@ pub struct FlanT5Corrector {
 
 impl FlanT5Corrector {
     pub async fn new() -> Result<Self> {
-        let model_dir = std::path::Path::new("../flan_t5_onnx");
+        let model_dir = std::path::Path::new("./flan_t5_onnx");
         
         // Check if files exist locally first
         let tokenizer_file = model_dir.join("tokenizer.json");
@@ -30,7 +30,7 @@ impl FlanT5Corrector {
             Tokenizer::from_file(&tokenizer_file)
                 .map_err(|e| E::msg(format!("Failed to load FLAN-T5 tokenizer: {}", e)))?
         } else {
-            info!("Downloading FLAN-T5 tokenizer from Hugging Face to ../flan_t5_onnx/...");
+            info!("Downloading FLAN-T5 tokenizer from Hugging Face to ./flan_t5_onnx/...");
             let api = hf_hub::api::tokio::Api::new()?;
             let repo = api.model("pszemraj/flan-t5-large-grammar-synthesis".to_string());
             
@@ -164,7 +164,7 @@ impl FlanT5Corrector {
 
 impl GrammarCorrector {
     pub async fn new() -> Result<Self> {
-        let model_dir = std::path::Path::new("../gramformer_onnx");
+        let model_dir = std::path::Path::new("./gramformer_onnx");
         let tokenizer = Tokenizer::from_file(model_dir.join("tokenizer.json"))
             .map_err(|e| E::msg(format!("Failed to load tokenizer: {}", e)))?;
         

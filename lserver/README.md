@@ -1,7 +1,9 @@
-# 🎯 Three-Stage Grammar Correction Backend
+# QuillGuard Backend 🪶🛡️
 
 > **🚀 RUST-POWERED AI GRAMMAR ENGINE**  
 > ⚡ Zero Python • 🤖 Real ONNX • 🛡️ Type Safe
+
+**QuillGuard's Three-Stage Grammar Correction Backend**
 
 ## 🔄 How It Works
 

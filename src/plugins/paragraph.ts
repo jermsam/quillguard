@@ -25,7 +25,7 @@ export interface GParagraphParams {
   readOnly: boolean;
 }
 export class GParagraph extends Paragraph {
-  private grammarChecker = new GrammarCheckerBuilder().build();
+  private grammarChecker: any = null;
   private mutationObserver: MutationObserver | null = null;
   private _readOnly: boolean;
   private _initialData: ParagraphData;
@@ -37,9 +37,21 @@ export class GParagraph extends Paragraph {
   }
 
   /**
+   * Initialize grammar checker lazily (client-side only)
+   */
+  private initGrammarChecker(): void {
+    if (!this.grammarChecker && typeof window !== 'undefined') {
+      this.grammarChecker = new GrammarCheckerBuilder().build();
+    }
+  }
+
+  /**
    * Shared grammar checking logic (debounced for better performance)
    */
   private performGrammarCheck(element: HTMLElement): void {
+    this.initGrammarChecker();
+    if (!this.grammarChecker) return;
+    
     const currentText = element.textContent || '';
     if (currentText.trim()) {
       // Use debounced checking for real-time typing
@@ -132,7 +144,9 @@ export class GParagraph extends Paragraph {
    */
   save(toolsContent: HTMLParagraphElement): ParagraphData {
     // Temporarily clear overlays to get clean content
-    this.grammarChecker.clearOverlays(toolsContent);
+    if (this.grammarChecker) {
+      this.grammarChecker.clearOverlays(toolsContent);
+    }
     
     // Get the clean content using parent's save method
     const data = super.save(toolsContent);
@@ -172,7 +186,9 @@ export class GParagraph extends Paragraph {
     }
     
     // Clean up grammar checker resources
-    this.grammarChecker.destroy();
+    if (this.grammarChecker) {
+      this.grammarChecker.destroy();
+    }
   }
 
 }

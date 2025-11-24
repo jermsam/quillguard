@@ -9,31 +9,34 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "backend": "cd lserver && cargo run",
+    "beta": "npm run dev",
+    "beta:build": "npm run build",
     "build": "qwik build",
     "build.client": "vite build",
     "build.preview": "vite build --ssr src/entry.preview.tsx",
+    "build.server": "qwik check-client src dist && vite build -c adapters/fastify/vite.config.ts",
     "build.types": "tsc --incremental --noEmit",
     "deploy": "echo 'Run \"npm run qwik add\" to install a server adapter'",
     "dev": "vite --mode ssr",
     "dev.debug": "node --inspect-brk ./node_modules/vite/bin/vite.js --mode ssr --force",
     "fmt": "prettier --write .",
     "fmt.check": "prettier --check .",
+    "full-dev": "concurrently \"npm run backend\" \"npm run dev\"",
     "lint": "eslint \"src/**/*.ts*\"",
     "preview": "qwik build preview && vite preview --open",
+    "serve": "node server/entry.fastify",
     "start": "vite --open --mode ssr",
-    "qwik": "qwik",
-    "beta": "npm run dev",
-    "beta:build": "npm run build",
-    "backend": "cd lserver && cargo run",
-    "full-dev": "concurrently \"npm run backend\" \"npm run dev\""
+    "qwik": "qwik"
   },
   "devDependencies": {
     "@builder.io/qwik": "^1.17.2",
     "@builder.io/qwik-city": "^1.17.2",
     "@eslint/js": "latest",
     "@tailwindcss/vite": "^4.1.4",
-    "concurrently": "^8.2.2",
     "@types/node": "20.19.0",
+    "concurrently": "^8.2.2",
+    "dotenv": "^16.3.2",
     "eslint": "9.32.0",
     "eslint-plugin-qwik": "^1.17.2",
     "globals": "16.4.0",
@@ -51,6 +54,10 @@
     "@editorjs/editorjs": "^2.31.0",
     "@editorjs/header": "^2.8.8",
     "@editorjs/paragraph": "^2.11.7",
-    "@tailwindcss/typography": "^0.5.19"
+    "@fastify/compress": "^6.2.1",
+    "@fastify/static": "^6.10.1",
+    "@tailwindcss/typography": "^0.5.19",
+    "fastify": "^4.17.0",
+    "fastify-plugin": "^4.5.0"
   }
 }

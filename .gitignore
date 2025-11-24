@@ -99,3 +99,13 @@ coverage/
 *.css.map
 *.js.map
 .parcel-cache/
+
+# ONNX Models (too large for GitHub)
+flan_t5_onnx/
+gramformer_onnx/
+lserver/target/
+*.onnx
+*.bin
+
+# Temporary files
+tmp/

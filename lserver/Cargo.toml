@@ -1,7 +1,13 @@
 [package]
-name = "lserver"
+name = "quillguard-backend"
 version = "0.1.0"
 edition = "2021"
+description = "QuillGuard - Three-Stage AI Grammar Correction Backend"
+authors = ["QuillGuard Team"]
+license = "MIT"
+repository = "https://github.com/your-org/quillguard"
+keywords = ["grammar", "ai", "onnx", "rust", "nlp"]
+categories = ["text-processing", "web-programming"]
 
 [dependencies]
 axum = "0.8.6"

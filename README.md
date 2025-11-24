@@ -1,8 +1,8 @@
-# Three-Stage Grammar Correction System 🎯
+# QuillGuard 🪶🛡️
 
-**Revolutionary Multi-Stage AI Grammar Correction**
+**Revolutionary Three-Stage AI Grammar Correction System**
 
-An innovative writing assistant featuring a unique three-stage grammar correction pipeline: Harper → Gramformer → FLAN-T5, built with Qwik frontend and Rust backend.
+QuillGuard is an innovative writing assistant featuring a unique three-stage grammar correction pipeline: Harper → Gramformer → FLAN-T5, built with Qwik frontend and Rust backend.
 
 ## 🚀 Revolutionary Three-Stage Architecture
 
@@ -35,6 +35,54 @@ An innovative writing assistant featuring a unique three-stage grammar correctio
 
 ---
 
+## 🔧 Model Setup
+
+QuillGuard requires two ONNX models that are not included in the repository due to their large size. Follow these steps to set them up:
+
+### Quick Setup
+```bash
+# Run the automated setup script
+./setup_models.sh
+```
+
+### Manual Setup
+
+#### 1. FLAN-T5 ONNX Model (Pre-converted)
+```bash
+# Create directory
+mkdir -p flan_t5_onnx
+
+# Download from Hugging Face
+# Go to: https://huggingface.co/Xenova/t5-base-grammar-correction
+# Download all files to flan_t5_onnx/ directory
+
+# Required files:
+# - model.onnx
+# - tokenizer.json  
+# - config.json
+```
+
+#### 2. Gramformer ONNX Model (Requires Conversion)
+```bash
+# Create directory  
+mkdir -p gramformer_onnx
+
+# Install Python dependencies
+pip install torch transformers onnx
+
+# Convert PyTorch model to ONNX
+python convert_gramformer.py
+
+# This creates:
+# - encoder_model.onnx
+# - decoder_model.onnx
+# - tokenizer files
+```
+
+The `convert_gramformer.py` script downloads the original PyTorch model from `prithivida/grammar_error_correcter_v1` and converts it to ONNX format for Rust inference.
+
+---
+
 ## 📁 Project Architecture
 
 ```
@@ -64,10 +112,10 @@ An innovative writing assistant featuring a unique three-stage grammar correctio
 
 ## Add Integrations and deployment
 
-Use the `npm run qwik add` command to add additional integrations. Some examples of integrations includes: Cloudflare, Netlify or Express Server, and the [Static Site Generator (SSG)](https://qwik.dev/qwikcity/guides/static-site-generation/).
+Use the `pnpm qwik add` command to add additional integrations. Some examples of integrations includes: Cloudflare, Netlify or Express Server, and the [Static Site Generator (SSG)](https://qwik.dev/qwikcity/guides/static-site-generation/).
 
 ```shell
-npm run qwik add # or `yarn qwik add`
+pnpm qwik add # or `pnpm qwik add`
 ```
 
 ## 🚀 Quick Start
@@ -84,7 +132,7 @@ pnpm install
 
 ### 2. Start Full Development Environment
 ```shell
-pnpm run full-dev
+pnpm full-dev
 ```
 This starts both the Rust backend (port 3000) and Qwik frontend (port 5173) simultaneously.
 
@@ -94,7 +142,7 @@ This starts both the Rust backend (port 3000) and Qwik frontend (port 5173) simu
 cd lserver && cargo run
 
 # Terminal 2: Start Frontend  
-pnpm run dev
+pnpm dev
 ```
 
 ### 4. Open Browser
@@ -172,7 +220,7 @@ harper = "5.0.0"             # Rule-based grammar engine
 The preview command will create a production build of the client modules, a production build of `src/entry.preview.tsx`, and run a local server. The preview server is only for convenience to preview a production build locally and should not be used as a production server.
 
 ```shell
-npm run preview # or `yarn preview`
+pnpm preview # or `pnpm preview`
 ```
 
 ## 🏗️ Production Build
@@ -180,7 +228,7 @@ npm run preview # or `yarn preview`
 The production build will generate client and server modules by running both client and server build commands.
 
 ```shell
-npm run build # or `yarn build`
+pnpm build # or `pnpm build`
 ```
 
 ## 🎯 Project Goals & Achievements
@@ -222,3 +270,13 @@ This is a research project demonstrating three-stage grammar correction. Contrib
 - **FLAN-T5**: [Hugging Face Model](https://huggingface.co/pszemraj/flan-t5-large-grammar-synthesis)
 - **ONNX Runtime**: [ort.pyke.io](https://ort.pyke.io/)
 - **Qwik**: [qwik.dev](https://qwik.dev/)
+
+## Fastify Server
+
+This app has a minimal [Fastify server](https://fastify.dev/) implementation. After running a full build, you can preview the build using the command:
+
+```
+pnpm serve
+```
+
+Then visit [http://localhost:3000/](http://localhost:3000/)

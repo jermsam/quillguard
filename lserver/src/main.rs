@@ -14,6 +14,7 @@ use tower_http::cors::{Any, CorsLayer};
 
 pub mod lang;
 use crate::lang::{HarperConfig, JSONSuggestion, Corrector};
+use crate::lang::lint::{check_grammar_professional, GrammarResponse as ProfessionalGrammarResponse};
 
 // Application state
 #[derive(Debug)]
@@ -70,10 +71,11 @@ async fn main() {
     let app = Router::new()
         .route("/api/info", get(info))
         .route("/api/grammar", post(check_grammar))
+        .route("/api/grammar/professional", post(check_grammar_pro))
         .with_state(state)
         .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any));
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     tracing::info!("Listening on http://{}", addr);
 
     let listener = TcpListener::bind(addr).await.unwrap();
@@ -111,4 +113,28 @@ async fn check_grammar(
         suggestion_count: suggestions.len(),
         suggestions,
     }))
+}
+
+/// Professional UX-focused grammar checking endpoint
+async fn check_grammar_pro(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<GrammarRequest>,
+) -> impl IntoResponse {
+    let mut count = state.request_count.lock().await;
+    *count += 1;
+
+    let corrector = if request.use_t5 {
+        Some(&state.t5_corrector)
+    } else {
+        None
+    };
+
+    let response = check_grammar_professional(
+        &state.harper,
+        &request.text,
+        request.dialect,
+        corrector
+    ).await;
+
+    (StatusCode::OK, Json(response))
 }

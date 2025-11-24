@@ -7,6 +7,34 @@ interface GrammarSuggestion {
   rule?: string;
 }
 
+// Professional UX-focused grammar correction interface
+interface GrammarCorrection {
+  id: string;
+  category: string;        // "correctness", "clarity", "engagement", "delivery"
+  subcategory: string;     // "spelling", "grammar", "punctuation", "style", "tone"
+  severity: string;        // "critical", "important", "enhancement"
+  confidence: number;      // 0.0 to 1.0
+  visual_treatment: string; // "highlight", "underline", "subtle", "none"
+  offset: number;
+  length: number;
+  original_text: string;
+  suggestions: string[];
+  primary_suggestion: string;
+  explanation: string;
+  source_stage: string;    // "harper", "gramformer", "flan_t5", "three_stage"
+  auto_apply: boolean;
+}
+
+interface ProfessionalGrammarResponse {
+  corrections: GrammarCorrection[];
+  stats: {
+    total_issues: number;
+    critical: number;
+    important: number;
+    enhancement: number;
+  };
+}
+
 interface GrammarConfig {
   // Configuration options for grammar checking
   enableSpellCheck?: boolean;
@@ -34,7 +62,7 @@ class GrammarChecker {
   }
 
   /**
-   * Fetch grammar suggestions from backend server
+   * Fetch grammar suggestions from backend server (legacy format)
    */
   async fetchGrammarSuggestions(text: string): Promise<GrammarSuggestion[]> {
     if (!text.trim()) {
@@ -42,7 +70,7 @@ class GrammarChecker {
     }
 
     try {
-      const response = await fetch('http://localhost:3000/api/grammar', {
+      const response = await fetch('/api/grammar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -75,6 +103,42 @@ class GrammarChecker {
     } catch (error) {
       console.error('Grammar check failed:', error);
       return [];
+    }
+  }
+
+  /**
+   * Fetch professional grammar corrections with UX categorization
+   */
+  async fetchProfessionalCorrections(text: string): Promise<ProfessionalGrammarResponse> {
+    if (!text.trim()) {
+      return { corrections: [], stats: { total_issues: 0, critical: 0, important: 0, enhancement: 0 } };
+    }
+
+    try {
+      const response = await fetch('/api/grammar/professional', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          text, 
+          dialect: this.config.dialect || 'American',
+          use_t5: true  // Enable full three-stage pipeline
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data: ProfessionalGrammarResponse = await response.json();
+      
+      console.log(`Professional grammar check found ${data.stats.total_issues} issues:`);
+      console.log(`- Critical: ${data.stats.critical}, Important: ${data.stats.important}, Enhancement: ${data.stats.enhancement}`);
+      
+      return data;
+      
+    } catch (error) {
+      console.error('Professional grammar check failed:', error);
+      return { corrections: [], stats: { total_issues: 0, critical: 0, important: 0, enhancement: 0 } };
     }
   }
 
@@ -307,8 +371,11 @@ class GrammarChecker {
    * Show grammar popup with suggestion details
    */
   private showGrammarPopup(suggestion: GrammarSuggestion, rect: DOMRect, problemText: string): void {
+    console.log('🔧 showGrammarPopup called with:', { suggestion, rect, problemText });
+    
     // Remove any existing popup
     this.hideGrammarPopup();
+    console.log('🗑️ Existing popup removed');
     
     // Create popup element with modern design
     const popup = document.createElement('div');
@@ -369,7 +436,21 @@ class GrammarChecker {
     message.style.color = '#4a4a4a';
     message.style.fontSize = '13px';
     message.style.lineHeight = '1.4';
-    message.textContent = suggestion.message;
+    
+    // Handle line breaks in the message properly
+    if (suggestion.message.includes('\n')) {
+      // Split by line breaks and create separate lines
+      const lines = suggestion.message.split('\n');
+      lines.forEach((line, index) => {
+        if (index > 0) {
+          message.appendChild(document.createElement('br'));
+        }
+        const textNode = document.createTextNode(line);
+        message.appendChild(textNode);
+      });
+    } else {
+      message.textContent = suggestion.message;
+    }
     
     const problemWord = document.createElement('div');
     problemWord.style.marginBottom = '12px';
@@ -394,7 +475,7 @@ class GrammarChecker {
       
       // Special handling for three-stage suggestions
       if (suggestion.type === 'three_stage') {
-        suggestionsTitle.textContent = 'Enhancement Stages:';
+        suggestionsTitle.textContent = 'Writing Improvements:';
       } else {
         suggestionsTitle.textContent = 'Suggestions:';
       }
@@ -422,6 +503,7 @@ class GrammarChecker {
         
         const replacementText = document.createElement('span');
         replacementText.textContent = replacement;
+        replacementText.style.flex = '1';
         
         const badge = document.createElement('span');
         badge.style.fontSize = '11px';
@@ -429,16 +511,11 @@ class GrammarChecker {
         badge.style.backgroundColor = '#e9ecef';
         badge.style.padding = '2px 6px';
         badge.style.borderRadius = '4px';
+        badge.style.minWidth = '16px';
+        badge.style.textAlign = 'center';
         
-        // Special labels for three-stage suggestions
-        if (suggestion.type === 'three_stage') {
-          const stageLabels = ['Harper', 'Gramformer', 'FLAN-T5'];
-          badge.textContent = stageLabels[index] || `Stage ${index + 1}`;
-          badge.style.backgroundColor = this.getColorForType(suggestion.type);
-          badge.style.color = 'white';
-        } else {
-          badge.textContent = `${index + 1}`;
-        }
+        // Add simple numbering for progression
+        badge.textContent = `${index + 1}`;
         
         suggestionItem.appendChild(replacementText);
         suggestionItem.appendChild(badge);
@@ -527,7 +604,11 @@ class GrammarChecker {
     popup.appendChild(closeButton);
     
     // Add to document
+    console.log('📋 Adding popup to document.body');
     document.body.appendChild(popup);
+    console.log('✅ Popup added to DOM, should be visible now');
+    console.log('Popup element:', popup);
+    console.log('Popup position:', popup.style.left, popup.style.top);
     
     // Close popup when clicking outside
     setTimeout(() => {
@@ -614,49 +695,100 @@ class GrammarChecker {
   }
 
   /**
-   * Create invisible overlay for rephrase suggestions (click-only, no visual highlighting)
+   * Create professional underline-only overlay for rephrase suggestions (like Grammarly)
    */
   private createInvisibleClickOverlay(wrapper: HTMLElement, text: string, suggestion: GrammarSuggestion, index: number): HTMLElement | null {
-    // Create a small, invisible click area at the beginning of the text
-    // This allows users to access rephrase suggestions without visual clutter
-    const clickArea = document.createElement('div');
-    clickArea.className = `grammar-click-area grammar-${suggestion.type}`;
-    clickArea.style.position = 'fixed';
-    
-    // Position at the start of the text area
-    const wrapperRect = wrapper.getBoundingClientRect();
-    clickArea.style.left = `${wrapperRect.left}px`;
-    clickArea.style.top = `${wrapperRect.top}px`;
-    clickArea.style.width = '20px'; // Small click area
-    clickArea.style.height = '20px';
-    clickArea.style.backgroundColor = 'transparent';
-    clickArea.style.border = `2px solid ${this.getColorForType(suggestion.type)}`;
-    clickArea.style.borderRadius = '50%';
-    clickArea.style.opacity = '0.7';
-    clickArea.style.pointerEvents = 'auto';
-    clickArea.style.cursor = 'pointer';
-    clickArea.style.zIndex = '1';
-    
-    // Store suggestion data
-    clickArea.dataset.suggestionIndex = String(index);
-    clickArea.dataset.suggestionType = suggestion.type;
-    clickArea.dataset.suggestionOffset = String(suggestion.offset);
-    clickArea.dataset.suggestionLength = String(suggestion.length);
-    
-    // Add click handler
-    const clickHandler = (e: MouseEvent) => {
-      console.log('Grammar rephrase clicked!', suggestion);
-      e.stopPropagation();
-      e.preventDefault();
+    try {
+      // Find the actual text node in the contentEditable element
+      const textNode = this.getFirstTextNode(wrapper);
+      if (!textNode || !textNode.textContent) {
+        console.warn('No text node found in wrapper');
+        return null;
+      }
+
+      // Ensure the suggestion offset is within bounds
+      const maxOffset = textNode.textContent.length;
+      const startOffset = Math.min(suggestion.offset, maxOffset);
+      const endOffset = Math.min(suggestion.offset + suggestion.length, maxOffset);
       
-      const rect = wrapper.getBoundingClientRect();
-      const problemText = text.slice(suggestion.offset, suggestion.offset + suggestion.length);
-      this.showGrammarPopup(suggestion, rect, problemText);
-    };
-    
-    clickArea.addEventListener('click', clickHandler);
-    
-    return clickArea;
+      if (startOffset >= endOffset) {
+        console.warn('Invalid offset range:', startOffset, endOffset);
+        return null;
+      }
+
+      // Create range for the problematic text using the actual text node
+      const range = document.createRange();
+      range.setStart(textNode, startOffset);
+      range.setEnd(textNode, endOffset);
+
+      // Get the position of the problematic text relative to viewport
+      const rect = range.getBoundingClientRect();
+
+      // Create obvious, clickable underline + background highlight
+      const underline = document.createElement('div');
+      underline.className = `grammar-underline grammar-${suggestion.type}`;
+      underline.style.position = 'fixed';
+      underline.style.left = `${rect.left - 2}px`;
+      underline.style.top = `${rect.top}px`;
+      underline.style.width = `${rect.width + 4}px`;
+      underline.style.height = `${rect.height}px`;
+      underline.style.backgroundColor = this.getColorForType(suggestion.type);
+      underline.style.opacity = '0.15';
+      underline.style.pointerEvents = 'auto';
+      underline.style.cursor = 'pointer';
+      underline.style.zIndex = '1';
+      underline.style.borderRadius = '3px';
+      underline.style.border = `1px solid ${this.getColorForType(suggestion.type)}`;
+      
+      // Add pulsing animation to make it obvious
+      underline.style.animation = 'grammarHighlight 2s ease-in-out infinite';
+      
+      // Add CSS animation if not exists
+      if (!document.getElementById('grammar-animations')) {
+        const style = document.createElement('style');
+        style.id = 'grammar-animations';
+        style.textContent = `
+          @keyframes grammarHighlight {
+            0%, 100% { opacity: 0.15; transform: scale(1); }
+            50% { opacity: 0.25; transform: scale(1.02); }
+          }
+          .grammar-underline:hover {
+            opacity: 0.3 !important;
+            animation: none !important;
+            transform: scale(1.05) !important;
+            border-width: 2px !important;
+          }
+        `;
+        document.head.appendChild(style);
+      }
+      
+      // Store suggestion data
+      underline.dataset.suggestionIndex = String(index);
+      underline.dataset.suggestionType = suggestion.type;
+      underline.dataset.suggestionOffset = String(suggestion.offset);
+      underline.dataset.suggestionLength = String(suggestion.length);
+      
+      // Grammarly-style: just the underline, no floating icons
+      
+      // Add click handler for Grammarly-style underline
+      const clickHandler = (e: MouseEvent) => {
+        console.log('📏 Grammarly-style underline clicked!', suggestion);
+        e.stopPropagation();
+        e.preventDefault();
+        
+        const problemText = text.slice(suggestion.offset, suggestion.offset + suggestion.length);
+        this.showGrammarPopup(suggestion, rect, problemText);
+      };
+      
+      underline.addEventListener('click', clickHandler);
+      
+      console.log(`Created Grammarly-style underline for "${text.slice(startOffset, endOffset)}" at position ${startOffset}-${endOffset}`);
+      
+      return underline;
+    } catch (error) {
+      console.error('Failed to create professional overlay:', error);
+      return null;
+    }
   }
 
   /**
