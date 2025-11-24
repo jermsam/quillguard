@@ -1,0 +1,60 @@
+# Git
+.git
+.gitignore
+
+# Node modules and build artifacts
+node_modules
+dist
+.cache
+.rollup.cache
+*.log
+
+# Rust build artifacts (will be built in container)
+lserver/target
+*.pdb
+
+# Development files
+.env
+.env.local
+*.local
+
+# IDE files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+*.tmp
+*.temp
+
+# Documentation (not needed in container)
+README.md
+docs/
+
+# CI/CD files
+.github/
+.gitlab-ci.yml
+
+# Docker files (except the ones we need)
+Dockerfile*
+!Dockerfile.backend
+!Dockerfile.frontend
+docker-compose*.yml
+!docker-compose.yml
+
+# Large files that will be downloaded in container
+flan_t5_onnx_backup/
+gramformer_onnx_backup/
+flan_t5_temp/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo

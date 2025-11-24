@@ -1,0 +1,49 @@
+# Development Docker Compose
+# Use: docker-compose -f docker-compose.dev.yml up
+version: '3.8'
+
+services:
+  backend-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      target: builder  # Stop at builder stage for development
+    container_name: quillguard-backend-dev
+    ports:
+      - "3000:3000"
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=full
+    volumes:
+      # Mount source for hot reload (if using cargo-watch)
+      - ./lserver:/app/lserver
+      - ./flan_t5_onnx:/app/flan_t5_onnx:ro
+      - ./gramformer_onnx:/app/gramformer_onnx:ro
+    working_dir: /app/lserver
+    command: cargo run
+    networks:
+      - quillguard-dev-network
+    restart: unless-stopped
+
+  frontend-dev:
+    image: node:20-alpine
+    container_name: quillguard-frontend-dev
+    ports:
+      - "5173:5173"
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - .:/app
+      - /app/node_modules  # Anonymous volume for node_modules
+    working_dir: /app
+    command: sh -c "npm install -g pnpm && pnpm install && pnpm dev --host 0.0.0.0"
+    networks:
+      - quillguard-dev-network
+    restart: unless-stopped
+    depends_on:
+      - backend-dev
+
+networks:
+  quillguard-dev-network:
+    driver: bridge
+    name: quillguard-dev-network
