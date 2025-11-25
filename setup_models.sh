@@ -3,6 +3,8 @@
 # QuillGuard Model Setup Script
 # This script downloads the required ONNX models for QuillGuard
 
+set -euo pipefail
+
 echo "🪶 QuillGuard Model Setup"
 echo "========================="
 
@@ -38,27 +40,23 @@ else
     echo "   ✅ FLAN-T5 model already exists"
 fi
 
-# Setup Gramformer ONNX model (requires conversion)
+# Setup Gramformer ONNX model (convert from PyTorch)
 echo "🔄 Setting up Gramformer ONNX model..."
-if [ ! -f "gramformer_onnx/encoder_model.onnx" ]; then
+if [ ! -f "gramformer_onnx/encoder_model.onnx" ] || [ ! -f "gramformer_onnx/decoder_model.onnx" ]; then
     echo "   ⚙️  Converting Gramformer from PyTorch to ONNX..."
-    
-    # Check if Python and required packages are available
     if command -v python3 &> /dev/null; then
         echo "   🐍 Running conversion script..."
         python3 convert_gramformer.py
-        
-        if [ $? -eq 0 ] && [ -f "gramformer_onnx/encoder_model.onnx" ]; then
-            echo "   ✅ Gramformer ONNX model converted successfully!"
-        else
-            echo "   ❌ Conversion failed. Please run manually:"
-            echo "   📦 Install: pip install torch transformers onnx"
-            echo "   🐍 Run: python3 convert_gramformer.py"
-        fi
     else
-        echo "   ⚠️  Python3 not found. Please install Python and run:"
-        echo "   📦 pip install torch transformers onnx"
-        echo "   🐍 python3 convert_gramformer.py"
+        echo "   ❌ Python3 not found; cannot convert Gramformer." >&2
+        exit 1
+    fi
+
+    if [ -f "gramformer_onnx/encoder_model.onnx" ] && [ -f "gramformer_onnx/decoder_model.onnx" ]; then
+        echo "   ✅ Gramformer ONNX ready."
+    else
+        echo "   ❌ Gramformer ONNX artifacts missing after conversion. Failing build." >&2
+        exit 1
     fi
 else
     echo "   ✅ Gramformer ONNX model already exists"

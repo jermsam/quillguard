@@ -34,8 +34,8 @@ RUN apt-get update && apt-get install -y \
     git-lfs \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies for model conversion
-RUN pip3 install torch transformers onnx onnxruntime --break-system-packages
+# Install Python dependencies for model conversion (include sentencepiece for T5 tokenizer and onnxscript for exporter)
+RUN pip3 install torch transformers onnx onnxruntime sentencepiece onnxscript --break-system-packages
 
 # Make setup script executable and run it
 RUN chmod +x setup_models.sh && ./setup_models.sh
